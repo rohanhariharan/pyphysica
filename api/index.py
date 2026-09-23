@@ -10,7 +10,11 @@ from io import BytesIO
 import base64
 import sympy as sp
 
-from matlang import Vector2, Vector3, Quaternion, Matrix, Func, Lim, x
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from physica import Vector2, Vector3, Quaternion, Matrix, Func, Lim, x
 
 # ---------------------------------------------------------------------------
 # Per-session variable store (module-level; fine for single-user / dev use)
@@ -996,8 +1000,5 @@ def revoke_key(key: str, authorization: str = Header(None)):
     return {"status": "deleted"}
 
 
-# ---------------------------------------------------------------------------
-# FIX 7: Register all routers — without this, none of the prefixed routes exist
-# ---------------------------------------------------------------------------
 app.include_router(v1beta1)
 app.include_router(v1beta2)

@@ -10,7 +10,7 @@ from io import BytesIO
 import base64
 import sympy as sp
 
-from matlang import Vector2, Vector3, Quaternion, Matrix, Func, Lim, x
+from physica import Vector2, Vector3, Quaternion, Matrix, Func, Lim, x
 
 # ---------------------------------------------------------------------------
 # Per-session variable store (module-level; fine for single-user / dev use)
@@ -550,7 +550,7 @@ from io import BytesIO
 import base64
 import sympy as sp
 
-from matlang import Vector2, Vector3, Quaternion, Matrix, Func, Lim, x
+from physica import Vector2, Vector3, Quaternion, Matrix, Func, Lim, x
 
 # ---------------------------------------------------------------------------
 # Per-session variable store (module-level; fine for single-user / dev use)
