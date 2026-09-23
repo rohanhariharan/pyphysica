@@ -825,9 +825,119 @@ class Time:
     def reset(self):
             self.t = 0
 
+
+# ---------------------------------------------------------------------------
+# Integrators
+#
+# Each integrator is a callable (obj, dt) -> obj that advances obj in place.
+# They are selected by name via Object2.integrator / integrate(dt, name).
+# ---------------------------------------------------------------------------
+
+
+def integrate_verlet(obj, dt):
+    """Velocity Verlet — 2nd-order symplectic (the default).
+
+    Bounded energy error and no secular drift on conservative systems. The
+    force is evaluated at the current state and at the predicted state, which
+    is what makes it symplectic (unlike RK4).
+
+        v(t+dt/2) = v(t) + a(t)*dt/2
+        x(t+dt)   = x(t) + v(t+dt/2)*dt
+        a(t+dt)   = F(x(t+dt), t+dt) / m
+        v(t+dt)   = v(t+dt/2) + a(t+dt)*dt/2
+    """
+    t0 = obj.time
+    a0 = obj.net_force_at(t0) / obj.mass
+
+    v_half = obj.velocity + a0 * (0.5 * dt)
+    obj.position = obj.position + v_half * dt
+
+    t1 = t0 + dt
+    a1 = obj.net_force_at(t1) / obj.mass
+    obj.velocity = v_half + a1 * (0.5 * dt)
+    obj.acceleration = a1
+
+    # Angular DOF: the torque is assumed constant over the step (explicit).
+    ang_accel = obj.torque / obj.moment
+    obj.angular_velocity = obj.angular_velocity + ang_accel * dt
+    obj.angle = obj.angle + obj.angular_velocity * dt
+
+    obj.time = t1
+    return obj
+
+
+def integrate_euler_cromer(obj, dt):
+    """Semi-implicit (Euler-Cromer) — 1st-order symplectic.
+
+    Updates velocity first, then uses the new velocity for the position.
+    Lower accuracy than Verlet but bounded energy.
+    """
+    t0 = obj.time
+    obj.acceleration = obj.net_force_at(t0) / obj.mass
+    obj.velocity = obj.velocity + obj.acceleration * dt
+    obj.position = obj.position + obj.velocity * dt
+
+    obj.angular_velocity = obj.angular_velocity + (obj.torque / obj.moment) * dt
+    obj.angle = obj.angle + obj.angular_velocity * dt
+
+    obj.time = t0 + dt
+    return obj
+
+
+def integrate_rk4(obj, dt):
+    """Classical Runge-Kutta 4 — 4th-order, non-symplectic.
+
+    Highest accuracy for smooth forces and time-varying drives, but energy can
+    drift on long conservative runs. Costs four force evaluations per step.
+
+    Forces are exposed as `net_force_at(t)` and may read `obj.position` /
+    `obj.velocity`, so each stage *stages* the object's state before evaluating
+    the force. Without that, position-coupled forces would see a frozen state
+    and the scheme would collapse to first order (or diverge).
+    """
+    x0, v0 = obj.position, obj.velocity
+    t0 = obj.time
+
+    def accel(x_stage, v_stage, t_stage):
+        obj.position, obj.velocity = x_stage, v_stage
+        return obj.net_force_at(t_stage) / obj.mass
+
+    try:
+        k1v = accel(x0, v0, t0)
+        k1x = v0
+
+        k2v = accel(x0 + k1x * (0.5 * dt), v0 + k1v * (0.5 * dt), t0 + 0.5 * dt)
+        k2x = v0 + k1v * (0.5 * dt)
+
+        k3v = accel(x0 + k2x * (0.5 * dt), v0 + k2v * (0.5 * dt), t0 + 0.5 * dt)
+        k3x = v0 + k2v * (0.5 * dt)
+
+        k4v = accel(x0 + k3x * dt, v0 + k3v * dt, t0 + dt)
+        k4x = v0 + k3v * dt
+    finally:
+        obj.position, obj.velocity = x0, v0
+
+    obj.position = x0 + (k1x + k2x * 2 + k3x * 2 + k4x) * (dt / 6)
+    obj.velocity = v0 + (k1v + k2v * 2 + k3v * 2 + k4v) * (dt / 6)
+    obj.acceleration = k1v
+
+    obj.angular_velocity = obj.angular_velocity + (obj.torque / obj.moment) * dt
+    obj.angle = obj.angle + obj.angular_velocity * dt
+
+    obj.time = t0 + dt
+    return obj
+
+
+INTEGRATORS = {
+    "verlet": integrate_verlet,
+    "euler-cromer": integrate_euler_cromer,
+    "rk4": integrate_rk4,
+}
+
+
 class Object2:
     # ------------------ Initialization & Representation ------------------
-    def __init__(self, name="Object", mass=1.0, position:Vector2=None, velocity:Vector2=None, acceleration:Vector2=None, radius=1.0):
+    def __init__(self, name="Object", mass=1.0, position:Vector2=None, velocity:Vector2=None, acceleration:Vector2=None, radius=1.0, integrator="verlet"):
         self.name = name
         self.mass = mass
         self.position = position if position is not None else Vector2()
@@ -839,6 +949,7 @@ class Object2:
         self.torque = 0.0
         self.moment = 0.5 * mass * radius ** 2
         self.time = 0.0
+        self.integrator = integrator
         self.forces: list = []
     
     def __repr__(self):
@@ -911,17 +1022,26 @@ class Object2:
         return None
     
     # ------------------ Motion / Physics ------------------
-    def update(self, dt):
-        return self.integrate(dt)
+    def update(self, dt, integrator=None):
+        return self.integrate(dt, integrator)
 
-    def integrate(self, dt):
-        self.acceleration = self.net_force / self.mass
-        self.position = self.position + self.velocity*dt + self.acceleration*(0.5*dt*dt)
-        self.velocity = self.velocity + self.acceleration*dt
-        self.angular_velocity = self.angular_velocity + (self.torque / self.moment)*dt
-        self.angle = self.angle + self.angular_velocity*dt
-        self.time = self.time + dt
-        return self
+    def integrate(self, dt, integrator=None):
+        """Advance the object by dt using the selected integrator.
+
+        `integrator` may be a callable `(obj, dt) -> obj`, a registered name
+        (see `INTEGRATORS`), or None to use `self.integrator`.
+        """
+        scheme = self.integrator if integrator is None else integrator
+        if isinstance(scheme, str):
+            try:
+                scheme = INTEGRATORS[scheme]
+            except KeyError:
+                raise ValueError(
+                    f"Unknown integrator {scheme!r}. Available: {sorted(INTEGRATORS)}"
+                ) from None
+        if not callable(scheme):
+            raise TypeError(f"Integrator must be callable or a registered name, got {type(scheme)}")
+        return scheme(self, dt)
 
     # ------------------ Symbolic (Func) Integration ------------------
     def net_force_symbolic(self):
@@ -1251,11 +1371,14 @@ def update(target_object: Object2, dt: int = 1, length=100):
     return decorator
 
 
-def simulate(objects, dt=1, length=100, time: Time = None):
+def simulate(objects, dt=1, length=100, time: Time = None, integrator=None):
     """Run every object's integrate(dt) for `length` steps.
 
     Continuous forces are re-evaluated each step; impulses are cleared once
     consumed. Returns {t: [state, ...]} so the run can be replayed.
+
+    `integrator` overrides each object's own scheme for this run (name or
+    callable); None uses each object's `integrator` attribute.
     """
     if isinstance(objects, Object2):
         objects = [objects]
@@ -1266,7 +1389,7 @@ def simulate(objects, dt=1, length=100, time: Time = None):
         time.up(dt)
         states = []
         for obj in objects:
-            obj.integrate(dt)
+            obj.integrate(dt, integrator)
             states.append(obj.state())
         history[time.t] = states
         for obj in objects:

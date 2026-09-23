@@ -118,12 +118,36 @@ pip install -e ".[dev]"
 pytest
 ```
 
+## Integrators
+
+Each `Object2` carries an `integrator`, set at construction or per call:
+
+```python
+obj = Object2("ball", mass=1.0, integrator="verlet")   # default
+obj.integrate(dt)                 # uses obj.integrator
+obj.integrate(dt, "rk4")          # override for this call
+simulate(obj, dt=0.01, length=100, integrator="euler-cromer")
+```
+
+Built-in schemes (`INTEGRATORS`), all advancing `integration` in place:
+
+| name | order | symplectic | notes |
+|---|---|---|---|
+| `verlet` (default) | 2 | yes | Velocity Verlet. Bounded energy, no secular drift. Exact for constant force. |
+| `euler-cromer` | 1 | yes | Semi-implicit Euler. Bounded energy, but first-order. |
+| `rk4` | 4 | no | Runge-Kutta 4. Highest accuracy for smooth/time-varying forces; energy may drift on long conservative runs. |
+
+Custom schemes can be registered by adding a `(obj, dt) -> obj` callable to
+`INTEGRATORS`, or passed directly to `integrate`.
+
 ## Physics notes
 
-- Integration is semi-implicit Euler, which introduces `O(dt)` energy drift.
-  Halving the timestep halves the drift.
+- The default is Velocity Verlet: 2nd-order symplectic, so energy stays bounded
+  on conservative systems (measured `2e-4` on a spring at `dt=0.01`).
 - `small-angle` checks against the analytic SHM solution agree to `< 1e-3`.
 - Equations of motion are derived from Newton's second law: `a = F_net / m`.
+- The angular DOF uses an explicit update (the torque is taken as constant over
+  a step) for all schemes.
 
 ## License
 

@@ -176,7 +176,8 @@ for _ in range(200):
 
 print(f"angle = {float(bob.angle):.6f} rad")
 print(f"omega = {float(bob.angular_velocity):.6f} rad/s")
-# Semi-implicit Euler drifts in energy, first-order in dt: halve dt -> halve drift.
+# The angular DOF uses an explicit update under every scheme, so the energy
+# drift here is first-order in dt: halving dt halves the drift.
 print(f"E(t)  = {float(energy(bob)):.6g}  (E0 = {E0:.6g}; drift is O(dt))")
 print(f"bob position (x, y) = {bob.position}")
 print()

@@ -24,6 +24,10 @@ from physica import (
     simulate,
     combine,
     describe_system,
+    INTEGRATORS,
+    integrate_verlet,
+    integrate_euler_cromer,
+    integrate_rk4,
 )
 
 
@@ -327,6 +331,117 @@ def test_combine():
     assert float(system["net_force"].x) == 1.0
     assert float(system["net_force"].y) == -3.0
     assert len(system["accelerations"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# Integrators
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("scheme", sorted(INTEGRATORS))
+def test_all_integrators_handle_constant_force(scheme):
+    """All schemes reproduce constant-acceleration motion to their own accuracy.
+
+    Verlet and RK4 are exact for constant force. Euler-Cromer is first-order:
+    it shifts position by the known half-step offset a*dt*t/2.
+    """
+    o = Object2("o", mass=1.0, position=Vector2(0, 0), velocity=Vector2(0, 0), integrator=scheme)
+
+    @continuous(o)
+    class G:
+        f = Vector2(0, -10)
+
+    dt, steps = 0.001, 1000
+    for _ in range(steps):
+        o.integrate(dt)
+    t = steps * dt
+
+    tolerance = 1e-9 if scheme != "euler-cromer" else 0.5 * 10 * dt * t + 1e-9
+    assert abs(float(o.position.y) - (-5.0)) < tolerance
+    assert abs(float(o.velocity.y) - (-10.0)) < 1e-9
+
+
+def test_integrator_selection_by_name_and_callable():
+    o = Object2("o", mass=1.0)
+
+    @continuous(o)
+    class G:
+        f = Vector2(0, -10)
+
+    o.integrate(0.1, "rk4")
+    assert abs(o.time - 0.1) < 1e-12
+
+    o.integrate(0.1, integrate_verlet)
+    assert abs(o.time - 0.2) < 1e-12
+
+    with pytest.raises(ValueError):
+        o.integrate(0.1, "does-not-exist")
+
+    with pytest.raises(TypeError):
+        o.integrate(0.1, 123)
+
+
+def _spring_energy(scheme, steps=2000, dt=0.01):
+    k, m = 4.0, 1.0
+    o = Object2("o", mass=m, position=Vector2(1.0, 0), velocity=Vector2(0, 0), integrator=scheme)
+
+    @continuous(o)
+    class Spring:
+        f = TimeVector.of(lambda t: Vector2(-k * o.position.x, 0))
+
+    def energy():
+        return 0.5 * m * float(o.velocity.x) ** 2 + 0.5 * k * float(o.position.x) ** 2
+
+    e0 = energy()
+    worst = 0.0
+    for _ in range(steps):
+        o.integrate(dt)
+        worst = max(worst, abs(energy() - e0))
+    return worst
+
+
+def test_verlet_is_symplectic_bounded_energy():
+    """Velocity Verlet keeps energy bounded (no secular drift) on a spring."""
+    assert _spring_energy("verlet") < 1e-2
+
+
+def test_rk4_is_more_accurate_than_verlet():
+    """RK4 should have far smaller energy error at the same dt."""
+    assert _spring_energy("rk4") < _spring_energy("verlet")
+
+
+def _spring_pos_error(scheme, dt):
+    """|x(2) - cos(4)| for the k=4, m=1 spring released from x=1."""
+    k, m = 4.0, 1.0
+    o = Object2("o", mass=m, position=Vector2(1.0, 0), velocity=Vector2(0, 0), integrator=scheme)
+
+    @continuous(o)
+    class Spring:
+        f = TimeVector.of(lambda t: Vector2(-k * o.position.x, 0))
+
+    for _ in range(round(2.0 / dt)):
+        o.integrate(dt)
+    return abs(float(o.position.x) - math.cos(4))
+
+
+def test_integrator_order_of_accuracy():
+    """Halving dt: Verlet error / 4 (2nd order), RK4 error / 16 (4th order)."""
+    v_ratio = _spring_pos_error("verlet", 0.02) / _spring_pos_error("verlet", 0.01)
+    r_ratio = _spring_pos_error("rk4", 0.02) / _spring_pos_error("rk4", 0.01)
+    assert 3.0 < v_ratio < 5.0
+    assert r_ratio > 12.0
+
+
+def test_rk4_restores_state_after_staging():
+    """RK4 stages the object; final state must not be left mid-stage."""
+    o = Object2("o", mass=1.0, position=Vector2(0, 0), integrator="rk4")
+
+    @continuous(o)
+    class G:
+        f = Vector2(0, -10)
+
+    o.integrate(0.1)
+    assert abs(float(o.position.y) + 0.05) < 1e-9
 
 
 # ---------------------------------------------------------------------------
