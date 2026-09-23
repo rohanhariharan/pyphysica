@@ -30,7 +30,9 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/ultragradients/casengine"
+Homepage = "https://github.com/rohanhariharan/pyphysica"
+Repository = "https://github.com/rohanhariharan/pyphysica"
+Issues = "https://github.com/rohanhariharan/pyphysica/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=7", "build"]

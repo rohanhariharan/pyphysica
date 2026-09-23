@@ -1,5 +1,9 @@
 # pyphysica
 
+[![PyPI](https://img.shields.io/pypi/v/pyphysica.svg)](https://pypi.org/project/pyphysica/)
+[![Python versions](https://img.shields.io/pypi/pyversions/pyphysica.svg)](https://pypi.org/project/pyphysica/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A symbolic + numeric physics DSL for Python. Declare forces as class attributes,
 let `pyphysica` integrate them numerically — or derive the equations of motion
 symbolically with [SymPy](https://www.sympy.org/).
@@ -33,8 +37,8 @@ pip install pyphysica
 From source:
 
 ```sh
-git clone https://github.com/ultragradients/casengine
-cd casengine
+git clone https://github.com/rohanhariharan/pyphysica
+cd pyphysica
 pip install -e ".[dev]"
 ```
 
