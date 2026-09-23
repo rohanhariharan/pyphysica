@@ -569,6 +569,11 @@ class Lim:
     def __call__(self, expr):
         self.expr = expr
         return self.evaluate()
+
+    def __eq__(self, other):
+        if self.point is None:
+            return NotImplemented
+        return sp.simplify(self.evaluate() - sp.sympify(other)) == 0
  
     def __repr__(self):
         if self.point is not None:
@@ -756,6 +761,16 @@ class TimeVector:
         if not callable(fn):
             raise TypeError("TimeVector.of expects a callable")
         return cls(fn=fn)
+
+    @property
+    def x(self):
+        """Symbolic x-component (expressions in T)."""
+        return self.symbolic().x
+
+    @property
+    def y(self):
+        """Symbolic y-component (expressions in T)."""
+        return self.symbolic().y
 
     @staticmethod
     def _as_vector(value, where):
