@@ -1,11 +1,2 @@
-fastapi
-uvicorn
-pydantic
 numpy
-matplotlib
-fastapi
-uvicorn
-pydantic
-numpy
-matplotlib
 sympy
